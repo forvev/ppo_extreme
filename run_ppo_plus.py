@@ -31,7 +31,7 @@ import random
 
 
 # Set env variables
-os.environ["WANDB_API_KEY"]="28996bd59f1ba2c5a8c3f2cc23d8673c327ae230"
+os.environ["WANDB_API_KEY"]="f9540294027a23e50c7baca093b39d876b433d87"
 os.environ["WANDB__SERVICE_WAIT"] = str(1800)
 os.environ['PYTHONHASHSEED'] = '1'
 os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
@@ -49,7 +49,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--seed',type=int,default=21) 
 
 parser.add_argument('--algo_name', type=str, default='superppo', help='the name of the RL algorithm')
-parser.add_argument('--project_name',type=str,default="single_exp_off") 
+parser.add_argument('--algo', type=str, default='p3o', help='the name of the RL algorithm')
+parser.add_argument('--project_name',type=str,default="single_exp_p3o_test") 
 parser.add_argument('--env_name',type=str,default="Ant-v5") 
 parser.add_argument('--max_steps',type=int,default=None) 
 parser.add_argument('--max_episode_steps',type=int,default=1000) 
@@ -105,7 +106,8 @@ def train(args):
 
     wandb_config = {
         'project': args.project_name,
-        'name':None,
+        'name':f"{args.algo}_{args.env_name}_{args.seed}",
+        "entity": "supersac",
         'hyperparam_dict':args.__dict__,
         }
     wandb_run = setup_wandb(**wandb_config)

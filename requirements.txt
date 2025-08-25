@@ -7,3 +7,4 @@ tqdm
 jax[cuda12]==0.6.0
 dm_control
 pandas
+ml_collections

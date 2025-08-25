@@ -50,6 +50,7 @@ class PPOConfig:
     store_grads: bool = False
     target_entropy: Optional[float] = None
     spo_loss: bool = False
+    algo: str = 'p3o'
 
 @dataclass
 class TrainingConfig:
@@ -93,6 +94,7 @@ class SuperPPOConfig:
                 entropy_coeff=args.entropy_coeff,
                 temperature=args.temperature,
                 spo_loss=args.spo_loss,
+                algo=args.algo,
             ),
             training=TrainingConfig(
                 seed=args.seed,
@@ -275,7 +277,9 @@ class SACAgent(flax.struct.PyTreeNode):
         
         
             pre_actions = batch["pre_actions"]
-            
+            clip_coef = agent.config.ppo.clipping_ratio ##default 0.2 
+            masks = batch["masks"]
+
             ############### METHOD 2 ###############
         
             dist = agent.actor.apply_fn({'params': actor_params}, batch["observations"])
@@ -313,34 +317,52 @@ class SACAgent(flax.struct.PyTreeNode):
             # logratio = new_logp - batch["log_probs"]
             #######################################
             
-            ratio = jnp.exp(logratio)
-            
-            
-         
-         
-            # Calculate how much policy is changing
-            approx_kl = ((ratio - 1) - logratio).mean()
 
-            # Policy loss
-            clip_coef = agent.config.ppo.clipping_ratio ##default 0.2 
-            masks = batch["masks"]
-            outliers = (ratio > 1 + 2 * clip_coef) | (ratio < 1 - 2 * clip_coef)
-            
-            
+            # Policy loss            
 
-            
-            
-            if agent.config.ppo.spo_loss:
-                
-                actor_loss_spo_terms = (1.-outliers)* batch["masks"] * adv * ratio - (jnp.abs(batch["masks"] * adv) / (2 * agent.config.ppo.clipping_ratio)) * (ratio - 1)**2
-                actor_loss = -actor_loss_spo_terms.mean()
-            
-            else :
-                ### Use standard PPO loss            
-                actor_loss1 = masks*adv * ratio
-                actor_loss2 = masks*adv * jnp.clip(ratio, 1 - clip_coef, 1 + clip_coef)
-                actor_loss = -jnp.minimum(actor_loss1,actor_loss2).mean()
+            if agent.config.ppo.algo == "p3o":
+                beh_logp = jax.lax.stop_gradient(batch["log_probs"])
+                # importance ratio
+                ratio = jnp.exp(new_logp - beh_logp)
+
+                w = ratio
+                n = w.shape[0]
+                ess = (jnp.sum(w) ** 2) / (jnp.sum(w**2) + 1e-8)
+                ess_norm = ess / (n + 1e-8)  # in [0, 1]
+                c = ess_norm
+                lambda_coef = 1.0 - ess_norm
+
+                rho_c = jnp.minimum(ratio, c)
+
+                # The 3rd term from the p3o paper
+                kl_proxy = beh_logp - new_logp
+                approx_kl = lambda_coef * kl_proxy.mean()
+                # ------------------------------
+
+                outliers = (ratio > 1 + 2 * clip_coef) | (ratio < 1 - 2 * clip_coef)
+
+                spo_terms = (1.0 - outliers) * batch["masks"] * adv * rho_c - (
+                    jnp.abs(batch["masks"] * adv) / (2 * clip_coef)
+                ) * (ratio - 1.0) ** 2
+
+                actor_loss = -spo_terms.mean() + approx_kl
+            elif agent.config.ppo.algo == "spo":
+                ratio = jnp.exp(logratio)
+                # Calculate how much policy is changing
+                approx_kl = ((ratio - 1) - logratio).mean()
+                outliers = (ratio > 1 + 2 * clip_coef) | (ratio < 1 - 2 * clip_coef)
+
+                if agent.config.ppo.spo_loss:
                     
+                    actor_loss_spo_terms = (1.-outliers)* batch["masks"] * adv * ratio - (jnp.abs(batch["masks"] * adv) / (2 * agent.config.ppo.clipping_ratio)) * (ratio - 1)**2
+                    actor_loss = -actor_loss_spo_terms.mean()
+                
+                else :
+                    ### Use standard PPO loss            
+                    actor_loss1 = masks*adv * ratio
+                    actor_loss2 = masks*adv * jnp.clip(ratio, 1 - clip_coef, 1 + clip_coef)
+                    actor_loss = -jnp.minimum(actor_loss1,actor_loss2).mean()
+                        
             ### Pad Q and logits because actor buffer is padded ###
             logp = masks * new_logp
             

@@ -35,7 +35,7 @@ SPO_PLUS_ARGS = {
             'on_policy_critic': False,
             'on_policy_actor': True,
             'optimizer': 'adam',
-        },
+        }
 
 
 
@@ -67,19 +67,19 @@ DEFAULT_ENVS = [
     "Hopper-v5", 
     "Walker2d-v5", 
     "HalfCheetah-v5", 
-    "Ant-v5", 
-    "Humanoid-v5"
+    # "Ant-v5", 
+    # "Humanoid-v5"
 ]
 
 def create_parser():
     parser = argparse.ArgumentParser(description='Run RL experiments with multiple algorithms')
     
     # Core experiment settings
-    parser.add_argument('--algorithm', type=str, choices=['ppo', 'ppo_plus', 'sac', 'ppo_ours', 'trpo'], 
+    parser.add_argument('--algorithm', type=str, choices=['ppo', 'ppo_plus', 'sac', 'ppo_ours', 'trpo', 'spo_extreme', 'spo_plus'], 
                        required=True, help='Algorithm to run')
-    parser.add_argument('--project_name', type=str, default='experiment_sweep',
+    parser.add_argument('--project_name', type=str, default='ppo_extreme_p3o_test',
                        help='WandB project name')
-    parser.add_argument('--num_seeds', type=int, default=5,
+    parser.add_argument('--num_seeds', type=int, default=1,
                        help='Number of random seeds to generate')
     parser.add_argument('--base_seed', type=int, default=42,
                        help='Base seed for random seed generation')

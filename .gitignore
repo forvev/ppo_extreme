@@ -81,3 +81,5 @@ coverage.xml
 # Logs and databases
 *.log
 *.sqlite
+*null
+slurm*
