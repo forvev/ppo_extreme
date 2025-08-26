@@ -81,6 +81,8 @@ parser.add_argument('--stable_scheme',type=str2bool,default=True)
 parser.add_argument('--bound_actions',type=str2bool,default=True)
 parser.add_argument('--optimizer',type=str,default='sgd', choices=['adam', 'sgd'])
 parser.add_argument('--spo_loss',type=str2bool,default=True)
+parser.add_argument('--replay_ratio', type=int, default = 2, help ='How many '
+                    '(on average) batches of data to sample from the replay buffer')
 
 args = parser.parse_args()
 print(args)
@@ -93,7 +95,7 @@ np.random.seed(args.seed)
 jax_rng = jax.random.PRNGKey(args.seed)
 jax.config.update("jax_default_matmul_precision", "highest")
 
-def train(args):
+def train(args, jax_rng: jax.random.PRNGKey):
     
     
         
@@ -178,8 +180,10 @@ def train(args):
                         actor_batch_on = actor_buffer.get_all()
                         agent,actor_update_info = agent.update_actor_seq(actor_batch_on, mode=0) #on_policy
 
-                        actor_batch_off = replay_buffer.get_all()
-                        agent,actor_update_info = agent.update_actor_seq(actor_batch_off, mode=1) #off_policy
+                        jax_rng, subkey = jax.random.split(jax_rng)
+                        for _ in range(jax.random.poisson(subkey, args.replay_ratio)):
+                            actor_batch_off = replay_buffer.get_all()
+                            agent,actor_update_info = agent.update_actor_seq(actor_batch_off, mode=1) #off_policy
                     else:
                         ### Update actor ###
                         if args.on_policy_actor:
@@ -222,5 +226,5 @@ def train(args):
         
     wandb_run.finish()
 
-train(args)
+train(args, jax_rng)
 #%%
