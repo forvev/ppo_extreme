@@ -118,14 +118,6 @@ def body(i,val):
     return (agent.update_critics(get_batch(i,batches)),batches)
 
 
-def scan_body_actor(carry, batch):
-    agent, _ = carry  # ignore previous info in carry
-    agent, info = agent.update_actor(batch)
-    return (agent, info), info  # (new_carry, output)
-
-
-
-
 class Temperature(nn.Module):
     initial_temperature: float = 1.
   
@@ -213,8 +205,8 @@ class SACAgent(flax.struct.PyTreeNode):
         
         return agent
     
-    @jax.jit
-    def update_actor_seq(agent,transitions,num_updates=0 ):
+    @partial(jax.jit, static_argnames=("mode",))
+    def update_actor_seq(agent,transitions,num_updates=0, mode: int=0):
         
         #idxs = jax.random.choice(agent.rng, a=transitions['observations'].shape[0], shape=(num_updates, 250), replace=True)
         n_batches = transitions['observations'].shape[0]//250
@@ -238,17 +230,16 @@ class SACAgent(flax.struct.PyTreeNode):
             'percent_outliers':0.0,
             
         }
-        initial_carry = (agent, dummy_info)  # (agent, dummy_info)
-        (final_agent, _), all_infos = jax.lax.scan(
-            scan_body_actor,
-            initial_carry,
-            batches,
-        )
-        
-        # aggregate across the time dimension (axis=0)
+
+        def scan_body(carry, batch):
+            agent, _ = carry
+            agent, info = agent.update_actor(batch, mode=mode)
+            return (agent, info), info
+
+        initial_carry = (agent, dummy_info)
+        (final_agent, _), all_infos = jax.lax.scan(scan_body, initial_carry, batches)
         agg_info = jax.tree_util.tree_map(lambda x: x.mean(0), all_infos)
         return final_agent, agg_info
-
 
     
     @partial(jax.jit,static_argnames=("num_updates",))
@@ -262,8 +253,8 @@ class SACAgent(flax.struct.PyTreeNode):
         return agent
 
     
-    @jax.jit
-    def update_actor(agent, batch: Batch):
+    @partial(jax.jit, static_argnames=("mode",))
+    def update_actor(agent, batch: Batch, mode: int=0):
     
     
       
@@ -320,7 +311,23 @@ class SACAgent(flax.struct.PyTreeNode):
 
             # Policy loss            
 
-            if agent.config.ppo.algo == "p3o":
+            if agent.config.ppo.algo == "spo" or mode == 0:
+                ratio = jnp.exp(logratio)
+                # Calculate how much policy is changing
+                approx_kl = ((ratio - 1) - logratio).mean()
+                outliers = (ratio > 1 + 2 * clip_coef) | (ratio < 1 - 2 * clip_coef)
+
+                if agent.config.ppo.spo_loss:
+                    
+                    actor_loss_spo_terms = (1.-outliers)* batch["masks"] * adv * ratio - (jnp.abs(batch["masks"] * adv) / (2 * agent.config.ppo.clipping_ratio)) * (ratio - 1)**2
+                    actor_loss = -actor_loss_spo_terms.mean()
+                
+                else :
+                    ### Use standard PPO loss            
+                    actor_loss1 = masks*adv * ratio
+                    actor_loss2 = masks*adv * jnp.clip(ratio, 1 - clip_coef, 1 + clip_coef)
+                    actor_loss = -jnp.minimum(actor_loss1,actor_loss2).mean()
+            elif agent.config.ppo.algo == "p3o":                    
                 beh_logp = jax.lax.stop_gradient(batch["log_probs"])
                 # importance ratio
                 ratio = jnp.exp(new_logp - beh_logp)
@@ -346,22 +353,6 @@ class SACAgent(flax.struct.PyTreeNode):
                 ) * (ratio - 1.0) ** 2
 
                 actor_loss = -spo_terms.mean() + approx_kl
-            elif agent.config.ppo.algo == "spo":
-                ratio = jnp.exp(logratio)
-                # Calculate how much policy is changing
-                approx_kl = ((ratio - 1) - logratio).mean()
-                outliers = (ratio > 1 + 2 * clip_coef) | (ratio < 1 - 2 * clip_coef)
-
-                if agent.config.ppo.spo_loss:
-                    
-                    actor_loss_spo_terms = (1.-outliers)* batch["masks"] * adv * ratio - (jnp.abs(batch["masks"] * adv) / (2 * agent.config.ppo.clipping_ratio)) * (ratio - 1)**2
-                    actor_loss = -actor_loss_spo_terms.mean()
-                
-                else :
-                    ### Use standard PPO loss            
-                    actor_loss1 = masks*adv * ratio
-                    actor_loss2 = masks*adv * jnp.clip(ratio, 1 - clip_coef, 1 + clip_coef)
-                    actor_loss = -jnp.minimum(actor_loss1,actor_loss2).mean()
                         
             ### Pad Q and logits because actor buffer is padded ###
             logp = masks * new_logp

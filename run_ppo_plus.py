@@ -173,14 +173,21 @@ def train(args):
                 
                 
                 for _ in range(args.num_epochs):
-                           
-                    ### Update actor ###
-                    if args.on_policy_actor:
-                        actor_batch = actor_buffer.get_all()
+
+                    if args.algo == "p3o":
+                        actor_batch_on = actor_buffer.get_all()
+                        agent,actor_update_info = agent.update_actor_seq(actor_batch_on, mode=0) #on_policy
+
+                        actor_batch_off = replay_buffer.get_all()
+                        agent,actor_update_info = agent.update_actor_seq(actor_batch_off, mode=1) #off_policy
                     else:
-                        actor_batch = replay_buffer.get_all()
-                    
-                    agent,actor_update_info = agent.update_actor_seq(actor_batch)
+                        ### Update actor ###
+                        if args.on_policy_actor:
+                            actor_batch = actor_buffer.get_all()
+                        else:
+                            actor_batch = replay_buffer.get_all()
+                        
+                        agent,actor_update_info = agent.update_actor_seq(actor_batch)
                     critic_update_info = {}
                 
                 update_info = {**critic_update_info, **actor_update_info}
