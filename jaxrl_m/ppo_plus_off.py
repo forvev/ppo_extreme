@@ -220,6 +220,8 @@ class SACAgent(flax.struct.PyTreeNode):
         # Use lax.scan for efficient sequential updates
         # Initialize with proper info structure to match update_actor output
         dummy_info = {
+            'ess_norm': 0.0,
+            'lambda_coef': 0.0,
             'actor_loss': 0.0,
             'entropy': 0.0, 
             'approx_kl': 0.0,
@@ -310,7 +312,8 @@ class SACAgent(flax.struct.PyTreeNode):
             
 
             # Policy loss            
-
+            ess_norm = 0.0
+            lambda_coef = 0.0
             if agent.config.ppo.algo == "spo" or mode == 0:
                 ratio = jnp.exp(logratio)
                 # Calculate how much policy is changing
@@ -346,13 +349,17 @@ class SACAgent(flax.struct.PyTreeNode):
                 approx_kl = lambda_coef * kl_proxy.mean()
                 # ------------------------------
 
-                outliers = (ratio > 1 + 2 * clip_coef) | (ratio < 1 - 2 * clip_coef)
+                # outliers = (ratio > 1 + 2 * clip_coef) | (ratio < 1 - 2 * clip_coef)
 
-                spo_terms = (1.0 - outliers) * batch["masks"] * adv * rho_c - (
-                    jnp.abs(batch["masks"] * adv) / (2 * clip_coef)
-                ) * (ratio - 1.0) ** 2
+                # spo_terms = (1.0 - outliers) * batch["masks"] * adv * rho_c - (
+                #     jnp.abs(batch["masks"] * adv) / (2 * clip_coef)
+                # ) * (ratio - 1.0) ** 2
 
-                actor_loss = -spo_terms.mean() + approx_kl
+                actor_loss1 = rho_c*masks*adv * ratio
+                actor_loss2 = rho_c*masks*adv * jnp.clip(ratio, 1 - clip_coef, 1 + clip_coef)
+                actor_loss_spo = -jnp.minimum(actor_loss1,actor_loss2).mean()
+                
+                actor_loss = actor_loss_spo + approx_kl
                         
             ### Pad Q and logits because actor buffer is padded ###
             logp = masks * new_logp
@@ -360,6 +367,8 @@ class SACAgent(flax.struct.PyTreeNode):
             entropy = -1 * (masks*logp).sum()/(masks.sum())
             
             return actor_loss, {
+                'ess_norm': ess_norm,
+                'lambda_coef': lambda_coef,
                 'actor_loss': actor_loss,
                 'entropy': entropy,
                 'approx_kl':approx_kl,
