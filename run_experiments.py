@@ -22,7 +22,7 @@ SPO_PLUS_ARGS = {
             'entropy_coeff': 0.5,
             'num_critics': 2,
             'hidden_dims': 256,
-            'temperature': 1.0,
+            'temperature': 0.01,
             'clipping_ratio': 0.25,
             'gae_lambda': 0.5,
             'buffer_size': 50000,
@@ -67,8 +67,8 @@ DEFAULT_ENVS = [
     "Hopper-v5", 
     "Walker2d-v5", 
     "HalfCheetah-v5", 
-    # "Ant-v5", 
-    # "Humanoid-v5"
+    "Ant-v5", 
+    "Humanoid-v5"
 ]
 
 def create_parser():
@@ -77,9 +77,9 @@ def create_parser():
     # Core experiment settings
     parser.add_argument('--algorithm', type=str, choices=['ppo', 'ppo_plus', 'sac', 'ppo_ours', 'trpo', 'spo_extreme', 'spo_plus'], 
                        required=True, help='Algorithm to run')
-    parser.add_argument('--project_name', type=str, default='ppo_extreme_p3o_test',
+    parser.add_argument('--project_name', type=str, default='p3o_vs_spo',
                        help='WandB project name')
-    parser.add_argument('--num_seeds', type=int, default=1,
+    parser.add_argument('--num_seeds', type=int, default=2,
                        help='Number of random seeds to generate')
     parser.add_argument('--base_seed', type=int, default=42,
                        help='Base seed for random seed generation')

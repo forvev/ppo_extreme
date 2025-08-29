@@ -61,7 +61,7 @@ parser.add_argument('--num_critics',type=int,default=2)
 parser.add_argument('--hidden_dims',type=int,default=256) 
 parser.add_argument('--momentum',type=float,default=0.9) 
 parser.add_argument('--b2',type=float,default=0.999) 
-parser.add_argument('--temperature',type=float,default=1.) 
+parser.add_argument('--temperature',type=float,default=0.01) 
 
 
 parser.add_argument('--on_policy_critic',type=str2bool,default=False)
@@ -108,7 +108,7 @@ def train(args, jax_rng: jax.random.PRNGKey):
 
     wandb_config = {
         'project': args.project_name,
-        'name':f"{args.algo}_{args.env_name}_{args.seed}",
+        'name':f"{args.algo}_{args.env_name}_{args.seed}_temp0.01",
         "entity": "supersac",
         'hyperparam_dict':args.__dict__,
         }
@@ -181,7 +181,8 @@ def train(args, jax_rng: jax.random.PRNGKey):
                         agent,actor_update_info = agent.update_actor_seq(actor_batch_on, mode=0) #on_policy
 
                         jax_rng, subkey = jax.random.split(jax_rng)
-                        for _ in range(jax.random.poisson(subkey, args.replay_ratio)):
+                        K = int(jax.random.poisson(subkey, lam=args.replay_ratio))
+                        for _ in range(K):
                             actor_batch_off = replay_buffer.get_all()
                             agent,actor_update_info = agent.update_actor_seq(actor_batch_off, mode=1) #off_policy
                     else:
